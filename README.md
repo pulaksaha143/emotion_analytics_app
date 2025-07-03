@@ -41,7 +41,7 @@ emotion_analytics_app/
 
 1️⃣ Clone this repository:
 ```bash
-git clone https://github.com/yourusername/emotion_analytics_app.git
+git clone https://github.com/pulaksaha143/emotion_analytics_app.git
 cd emotion_analytics_app
 
 pip install -r requirements.txt
