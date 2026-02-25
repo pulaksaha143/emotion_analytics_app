@@ -1,4 +1,5 @@
 import os
+# Force Legacy Keras for DeepFace stability
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 import streamlit as st
@@ -13,26 +14,34 @@ import av
 import plotly.express as px
 from fpdf import FPDF
 
-st.set_page_config(page_title="Emotion AI", layout="wide")
+st.set_page_config(page_title="Emotion AI Analytics", layout="wide")
 st.title("😊 Real-Time Emotion Detection & Analytics")
 
+# --- Session State ---
 if 'data' not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=['Time', 'Emotion'])
 
-# --- Emoji Loading ---
+# --- Emoji Loading (Updated for /emojis folder) ---
 @st.cache_resource
 def load_emojis():
+    # Mapping filenames specifically inside the 'emojis' folder
     emoji_map = {
-        'happy': 'happy.png', 'sad': 'sad.png', 'angry': 'angry.png',
-        'surprise': 'surprise.png', 'neutral': 'neutral.png',
-        'disgust': 'disgust.png', 'fear': 'fear.png'
+        'happy': 'emojis/happy.png', 
+        'sad': 'emojis/sad.png', 
+        'angry': 'emojis/angry.png',
+        'surprise': 'emojis/surprise.png', 
+        'neutral': 'emojis/neutral.png',
+        'disgust': 'emojis/disgust.png', 
+        'fear': 'emojis/fear.png'
     }
     imgs = {}
     for k, v in emoji_map.items():
         try:
+            # Open and prepare for CV2 overlay
             img = Image.open(v).convert("RGBA").resize((100, 100))
             imgs[k] = np.array(img)
-        except: continue
+        except Exception as e:
+            print(f"Error loading emoji {k}: {e}")
     return imgs
 
 emojis = load_emojis()
@@ -41,14 +50,17 @@ def overlay_emoji(frame, emotion):
     if emotion in emojis:
         emoji = emojis[emotion]
         h, w, _ = frame.shape
+        # Position: Top Right Corner
         y1, y2, x1, x2 = 20, 120, w-120, w-20
+        
+        # Alpha blending for transparency
         alpha_s = emoji[:, :, 3] / 255.0
         alpha_l = 1.0 - alpha_s
         for c in range(0, 3):
             frame[y1:y2, x1:x2, c] = (alpha_s * emoji[:, :, c] + alpha_l * frame[y1:y2, x1:x2, c])
     return frame
 
-# --- Processor ---
+# --- Video Processor ---
 class EmotionProcessor(VideoProcessorBase):
     def __init__(self):
         self.current_emotion = "neutral"
@@ -58,20 +70,30 @@ class EmotionProcessor(VideoProcessorBase):
         img = frame.to_ndarray(format="bgr24")
         self.frame_count += 1
         
+        # Analyze every 15 frames
         if self.frame_count % 15 == 0:
             try:
+                # detector_backend='opencv' is the fastest for real-time
                 res = DeepFace.analyze(img, actions=['emotion'], enforce_detection=False, detector_backend='opencv')
                 self.current_emotion = res[0]['dominant_emotion']
+                
+                # Append data to session state
                 now = datetime.now().strftime("%H:%M:%S")
                 new_row = pd.DataFrame({'Time': [now], 'Emotion': [self.current_emotion]})
                 st.session_state.data = pd.concat([st.session_state.data, new_row], ignore_index=True)
-            except: pass
+            except:
+                pass
 
+        # Apply Emoji Overlay
         img = overlay_emoji(img, self.current_emotion)
-        cv2.putText(img, f"Emotion: {self.current_emotion}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        # Add text status
+        cv2.putText(img, f"Status: {self.current_emotion.upper()}", (20, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-# --- Streamer ---
+# --- The Streamer ---
 ctx = webrtc_streamer(
     key="emotion-analysis",
     mode=WebRtcMode.SENDRECV,
@@ -80,27 +102,39 @@ ctx = webrtc_streamer(
     media_stream_constraints={"video": True, "audio": False},
 )
 
-# --- Post-Session Report ---
+# --- Reporting Logic ---
+# Appears only when the camera is stopped
 if not ctx.state.playing and not st.session_state.data.empty:
     st.divider()
-    st.header("📊 Emotion Analytics Report")
-    df = st.session_state.data
+    st.header("📊 Post-Session Emotion Analytics")
     
+    df = st.session_state.data
+    counts = df['Emotion'].value_counts().reset_index()
+    counts.columns = ['Emotion', 'Count']
+
     col1, col2 = st.columns(2)
     with col1:
-        st.plotly_chart(px.bar(df['Emotion'].value_counts()), use_container_width=True)
+        st.plotly_chart(px.bar(counts, x='Emotion', y='Count', color='Emotion', title="Frequency of Emotions"), use_container_width=True)
     with col2:
-        st.plotly_chart(px.pie(df, names='Emotion'), use_container_width=True)
+        st.plotly_chart(px.pie(counts, names='Emotion', values='Count', hole=0.4, title="Overall Distribution"), use_container_width=True)
 
-    # PDF Report
+    # Export Section
+    st.subheader("📝 Download Session Report")
+    
+    # PDF Generation in memory
     pdf = FPDF()
     pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="Emotion Analytics Report", ln=True, align='C')
+    pdf.ln(10)
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Emotion Session Report", ln=True, align='C')
-    for i, row in df.tail(20).iterrows():
-        pdf.cell(200, 10, txt=f"{row['Time']}: {row['Emotion']}", ln=True)
+    pdf.cell(200, 10, txt=f"Session Date: {datetime.now().strftime('%Y-%m-%d')}", ln=True)
+    pdf.ln(5)
+
+    for i, row in df.tail(30).iterrows():
+        pdf.cell(200, 10, txt=f"{row['Time']} - Detected Emotion: {row['Emotion']}", ln=True)
     
-    pdf_out = pdf.output(dest='S').encode('latin-1')
-    st.download_button("⬇️ Download PDF", pdf_out, "report.pdf", "application/pdf")
+    pdf_output = pdf.output(dest='S').encode('latin-1')
+    st.download_button("⬇️ Download PDF Report", pdf_output, "emotion_report.pdf", "application/pdf")
 
 st.caption("generated by pulak saha")
