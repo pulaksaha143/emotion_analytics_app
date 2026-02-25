@@ -3,9 +3,9 @@ streamlit-webrtc
 av
 opencv-python-headless
 deepface==0.0.93
+tensorflow==2.15.1
+tf-keras
 pandas
 plotly
 fpdf2
 pillow
-tensorflow==2.15.1
-tf-keras
