@@ -1,6 +1,7 @@
 import os
-# FORCE LEGACY KERAS BEFORE ANY OTHER IMPORTS
+# Force legacy Keras and disable Keras 3 behavior
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0" # Prevents floating point errors on some servers
 
 import streamlit as st
 import cv2
