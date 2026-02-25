@@ -1,9 +1,9 @@
 streamlit
 streamlit-webrtc
 opencv-python-headless
-deepface
+deepface==0.0.79
+tf-keras
 pandas
 plotly
 fpdf2
 pillow
-tf-keras
