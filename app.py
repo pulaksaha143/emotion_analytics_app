@@ -1,3 +1,7 @@
+import os
+# FORCE LEGACY KERAS BEFORE ANY OTHER IMPORTS
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
 import streamlit as st
 import cv2
 from deepface import DeepFace
@@ -34,7 +38,7 @@ def load_emojis():
         except: continue
     return imgs
 
-emojis = load_emojis()
+emojis_dict = load_emojis()
 
 # --- WebRTC Video Processor ---
 class EmotionProcessor(VideoProcessorBase):
@@ -45,27 +49,36 @@ class EmotionProcessor(VideoProcessorBase):
         img = frame.to_ndarray(format="bgr24")
         
         try:
-            # lightweight opencv backend for faster cloud processing
+            # Use 'opencv' for speed on the free tier
             results = DeepFace.analyze(img, actions=['emotion'], enforce_detection=False, detector_backend='opencv')
             self.current_emotion = results[0]['dominant_emotion']
             
-            # Log data
+            # Log data to session state
             now = datetime.now().strftime("%H:%M:%S")
             new_row = pd.DataFrame({'Time': [now], 'Emotion': [self.current_emotion]})
             st.session_state.data = pd.concat([st.session_state.data, new_row], ignore_index=True)
         except:
             pass
 
+        # Overlay text on stream
         cv2.putText(img, f"Emotion: {self.current_emotion}", (20, 50), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-webrtc_streamer(key="emotion-stream", video_processor_factory=EmotionProcessor)
+# --- UI Setup ---
+webrtc_streamer(
+    key="emotion-stream", 
+    video_processor_factory=EmotionProcessor,
+    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
 
 # --- Dashboard ---
 if not st.session_state.data.empty:
     st.divider()
+    st.subheader("📊 Session Analytics")
     col1, col2 = st.columns(2)
+    
     counts = st.session_state.data['Emotion'].value_counts().reset_index()
     counts.columns = ['Emotion', 'Count']
     
@@ -74,7 +87,8 @@ if not st.session_state.data.empty:
     with col2:
         st.plotly_chart(px.pie(counts, names='Emotion', values='Count'), use_container_width=True)
 
+    # Download
     csv = st.session_state.data.to_csv(index=False).encode('utf-8')
-    st.download_button("⬇️ Download CSV Data", csv, "emotions.csv", "text/csv")
+    st.download_button("⬇️ Export Data (CSV)", csv, "session_emotions.csv", "text/csv")
 
 st.caption("Developed by Pulak Saha")
