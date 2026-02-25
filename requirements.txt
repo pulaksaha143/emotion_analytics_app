@@ -1,11 +1,6 @@
 streamlit
-streamlit-webrtc
-av
-opencv-python-headless
-deepface==0.0.93
-tensorflow==2.15.0
-keras==2.15.0
-tf-keras
+opencv-python
+deepface
 pandas
 plotly
 fpdf2
